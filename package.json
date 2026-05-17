@@ -1,0 +1,19 @@
+{
+  "name": "pdf-microservice",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@sparticuz/chromium": "^147.0.0",
+    "express": "^5.2.1",
+    "handlebars": "^4.7.9",
+    "puppeteer": "^24.43.1",
+    "puppeteer-core": "^24.43.1"
+  }
+}
