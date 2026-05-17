@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 13px;
+      color: #1a1a1a;
+      background: #fff;
+    }
+
+    .top-bar {
+      height: 5px;
+      background: linear-gradient(90deg, #7b2ff7, #f107a3);
+    }
+
+    .page { padding: 40px 48px; }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 28px;
+    }
+
+    .logo-area {
+      width: 140px;
+      height: 48px;
+      border: 1px solid #ddd;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #bbb;
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    .logo-img {
+      max-width: 400px;
+      max-height: 160px;
+      object-fit: contain;
+    }
+
+    .header-right { text-align: right; }
+
+    .doc-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #1a1a1a;
+    }
+
+    .doc-meta {
+      font-size: 12px;
+      color: #888;
+      margin-top: 3px;
+    }
+
+    .doc-meta strong { color: #1a1a1a; }
+
+    .status-pill {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 2px 10px;
+      background: #f0fdf4;
+      border: 1px solid #86efac;
+      border-radius: 20px;
+      font-size: 10px;
+      font-weight: 700;
+      color: #15803d;
+    }
+
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, #7b2ff7 0%, #f107a3 40%, #e5e7eb 100%);
+      margin-bottom: 24px;
+    }
+
+    .section-label {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #7b2ff7;
+      margin-bottom: 10px;
+    }
+
+    .company-section {
+      margin-bottom: 24px;
+      padding-bottom: 22px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .fields-row {
+      display: flex;
+      gap: 40px;
+      flex-wrap: wrap;
+    }
+
+    .field-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 140px;
+    }
+
+    .field-label {
+      font-size: 10px;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .field-value {
+      font-size: 13px;
+      color: #1a1a1a;
+      font-weight: 500;
+    }
+
+    .table-section {
+      margin-bottom: 24px;
+      padding-bottom: 22px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    table thead tr {
+      border-bottom: 1.5px solid #1a1a1a;
+    }
+
+    table th {
+      text-align: left;
+      padding: 7px 10px 7px 0;
+      font-size: 10px;
+      font-weight: 700;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    table th:first-child { width: 36px; }
+    table th:last-child { width: 180px; }
+
+    table td {
+      padding: 9px 10px 9px 0;
+      font-size: 13px;
+      color: #1a1a1a;
+      border-bottom: 1px solid #f5f5f5;
+      vertical-align: top;
+    }
+
+    table tr:last-child td { border-bottom: none; }
+
+    .item-num {
+      font-size: 12px;
+      font-weight: 700;
+      color: #c4b5fd;
+    }
+
+    .serial-cell {
+      font-size: 12px;
+      color: #666;
+      font-family: 'Courier New', monospace;
+    }
+
+    .serial-empty {
+      font-size: 11px;
+      color: #ccc;
+      font-style: italic;
+    }
+
+    .notes-section {
+      margin-bottom: 24px;
+      padding-bottom: 22px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .notes-text {
+      font-size: 13px;
+      color: #444;
+      line-height: 1.6;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding-top: 20px;
+    }
+
+    .sig-block img {
+      max-width: 200px;
+      max-height: 72px;
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .sig-line {
+      width: 200px;
+      height: 60px;
+      border-bottom: 1px solid #ccc;
+      margin-bottom: 8px;
+    }
+
+    .sig-label {
+      font-size: 10px;
+      color: #bbb;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .sig-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-top: 3px;
+    }
+
+    .tech-block { text-align: right; }
+
+    .tech-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: #1a1a1a;
+    }
+
+    .tech-role {
+      font-size: 11px;
+      color: #aaa;
+      margin-top: 2px;
+      margin-bottom: 12px;
+    }
+
+    .powered {
+      font-size: 10px;
+      color: #ccc;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="top-bar"></div>
+
+  <div class="page">
+
+    <!-- HEADER -->
+    <div class="header">
+      {{#if logo}}
+        <img class="logo-img" src="{{logo}}" alt="Logo" />
+      {{else}}
+        <div class="logo-area">LOGO</div>
+      {{/if}}
+      <div class="header-right">
+        <div class="doc-title">Install Complete Form</div>
+        <div class="doc-meta">Install Date: <strong>{{install_date}}</strong></div>
+        <div class="status-pill">✓ Completed</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- COMPANY INFO -->
+    <div class="company-section">
+      <div class="section-label">Company Information</div>
+      <div class="fields-row">
+        <div class="field-item">
+          <span class="field-label">Company</span>
+          <span class="field-value">{{name}}</span>
+        </div>
+        <div class="field-item">
+          <span class="field-label">Address</span>
+          <span class="field-value">{{address}}</span>
+        </div>
+        <div class="field-item">
+          <span class="field-label">Contact Name</span>
+          <span class="field-value">{{c_name}}</span>
+        </div>
+        <div class="field-item">
+          <span class="field-label">Contact Phone</span>
+          <span class="field-value">{{c_phone}}</span>
+        </div>
+        <div class="field-item">
+          <span class="field-label">Contact Email</span>
+          <span class="field-value">{{c_email}}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- LINE ITEMS -->
+    <div class="table-section">
+      <div class="section-label">Line Items & Hardware Serial Numbers</div>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Item</th>
+            <th>Serial Number</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each line_items}}
+          <tr>
+            <td class="item-num">{{inc @index}}</td>
+            <td>{{this.name}}</td>
+            <td class="serial-cell">
+              {{#if this.serial}}
+                {{this.serial}}
+              {{else}}
+                <span class="serial-empty">—</span>
+              {{/if}}
+            </td>
+          </tr>
+          {{/each}}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- NOTES -->
+    {{#if notes}}
+    <div class="notes-section">
+      <div class="section-label">Install Notes</div>
+      <div class="notes-text">{{notes}}</div>
+    </div>
+    {{/if}}
+
+    <!-- FOOTER -->
+    <div class="footer">
+      <div class="sig-block">
+        {{#if signature}}
+          <img src="{{signature}}" alt="Signature" />
+        {{else}}
+          <div class="sig-line"></div>
+        {{/if}}
+        <div class="sig-label">Customer Signature</div>
+        <div class="sig-name">{{c_name}}</div>
+      </div>
+
+      <div class="tech-block">
+        <div class="tech-name">{{install_owner_NAME}}</div>
+        <div class="tech-role">Field Service Engineer</div>
+        <div class="powered">
+          POWERED BY
+          <svg width="48" height="13" viewBox="0 0 48 13" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#7b2ff7"/>
+                <stop offset="100%" stop-color="#f107a3"/>
+              </linearGradient>
+            </defs>
+            <text x="0" y="11" font-family="Arial" font-size="10" font-weight="700"
+                  fill="url(#g)" letter-spacing="0.3">MAPSLY</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>
