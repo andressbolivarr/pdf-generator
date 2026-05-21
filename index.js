@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const Handlebars = require('handlebars');
 const sharp = require('sharp');
+const axios = require('axios');
+const FormData = require('form-data');
 const { v4: uuidv4 } = require('uuid');
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -13,7 +15,7 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 
 // ─── Handlebars Helpers ───────────────────────────────────────────────────────
-Handlebars.registerHelper('inc', function(index) {
+Handlebars.registerHelper('inc', function (index) {
   return index + 1;
 });
 
@@ -24,9 +26,7 @@ const pdfStore = new Map();
 setInterval(() => {
   const cutoff = Date.now() - 24 * 60 * 60 * 1000;
   for (const [id, entry] of pdfStore.entries()) {
-    if (entry.createdAt < cutoff) {
-      pdfStore.delete(id);
-    }
+    if (entry.createdAt < cutoff) pdfStore.delete(id);
   }
 }, 60 * 60 * 1000);
 
@@ -34,7 +34,6 @@ setInterval(() => {
 async function getLogo(clientSlug) {
   const logosDir = path.join(__dirname, 'logos');
   const extensions = ['png', 'jpg', 'jpeg', 'svg'];
-
   const candidates = clientSlug
     ? extensions.map(ext => `${clientSlug}.${ext}`)
     : [];
@@ -44,25 +43,21 @@ async function getLogo(clientSlug) {
     const filepath = path.join(logosDir, filename);
     if (fs.existsSync(filepath)) {
       const ext = filename.split('.').pop().toLowerCase();
-
       if (ext === 'svg') {
         const data = fs.readFileSync(filepath);
         return `data:image/svg+xml;base64,${Buffer.from(data).toString('base64')}`;
       }
-
       const compressed = await sharp(filepath)
         .resize(280, 96, { fit: 'inside', withoutEnlargement: true })
         .jpeg({ quality: 75, progressive: true })
         .toBuffer();
-
       return `data:image/jpeg;base64,${compressed.toString('base64')}`;
     }
   }
-
   return null;
 }
 
-// ─── Generate PDF ─────────────────────────────────────────────────────────────
+// ─── PDF Generator ────────────────────────────────────────────────────────────
 async function generatePDF(template, client, data) {
   const templatePath = path.join(__dirname, 'templates', `${template}.hbs`);
   if (!fs.existsSync(templatePath)) {
@@ -71,10 +66,8 @@ async function generatePDF(template, client, data) {
 
   const templateSource = fs.readFileSync(templatePath, 'utf8');
   const compiledTemplate = Handlebars.compile(templateSource);
-
   const logo = await getLogo(client);
-  const enrichedData = { ...data, logo };
-  const html = compiledTemplate(enrichedData);
+  const html = compiledTemplate({ ...data, logo });
 
   const browser = await puppeteer.launch(
     isProduction
@@ -90,14 +83,10 @@ async function generatePDF(template, client, data) {
   );
 
   const page = await browser.newPage();
-
   await page.setRequestInterception(true);
-  page.on('request', (req) => {
+  page.on('request', req => {
     const url = req.url();
-    if (
-      url.includes('fonts.googleapis.com') ||
-      url.includes('fonts.gstatic.com')
-    ) {
+    if (url.includes('fonts.googleapis.com') || url.includes('fonts.gstatic.com')) {
       req.abort();
     } else {
       req.continue();
@@ -105,37 +94,95 @@ async function generatePDF(template, client, data) {
   });
 
   await page.setContent(html, { waitUntil: 'networkidle0' });
-
   const pdfBuffer = await page.pdf({
     format: 'A4',
     printBackground: true,
     margin: { top: '16mm', bottom: '16mm', left: '14mm', right: '14mm' },
   });
-
   await browser.close();
 
   return Buffer.from(pdfBuffer);
 }
 
+// ─── HubSpot Uploader ─────────────────────────────────────────────────────────
+async function uploadToHubSpot(pdfBuffer, fileName, folderId, token) {
+  const form = new FormData();
+  form.append('file', pdfBuffer, { filename: fileName, contentType: 'application/pdf' });
+  form.append('folderId', String(folderId));
+  form.append(
+    'options',
+    JSON.stringify({
+      access: 'PUBLIC_INDEXABLE',
+      ttl: 'P3M',
+      overwrite: false,
+      duplicateValidationStrategy: 'NONE',
+      duplicateValidationScope: 'ENTIRE_PORTAL',
+    })
+  );
+
+  const response = await axios.post('https://api.hubapi.com/files/v3/files', form, {
+    headers: {
+      ...form.getHeaders(),
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  return response.data; // { id, name, url, ... }
+}
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
-// 1. Generate PDF → returns base64
+// 1. Generate PDF → store in memory → return public URL
+//    Mapsly resultMessage:  {{ response.pdfUrl }}
+//    Next action uses:      GetFileContent(lastAction.resultMessage)
 app.post('/generate-pdf', async (req, res) => {
   try {
     const { template, client, data } = req.body;
     const pdfBuffer = await generatePDF(template, client, data);
-    const base64PDF = pdfBuffer.toString('base64');
-    res.json({
-      success: true,
-      pdf: `data:application/pdf;base64,${base64PDF}`
-    });
+
+    const id = uuidv4();
+    pdfStore.set(id, { buffer: pdfBuffer, createdAt: Date.now() });
+
+    const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
+    res.json({ success: true, pdfUrl: `${baseUrl}/pdf/${id}` });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// 2. Generate PDF → store in memory → return public URL
+// 2. Generate PDF → upload directly to HubSpot → return file ID + URL
+//    Use when Railway should own the full upload (no Mapsly GetFileContent needed)
+//    Mapsly resultMessage:  {{ response.fileId }}
+//    Requires env vars:     HUBSPOT_TOKEN, HUBSPOT_FOLDER_ID
+app.post('/generate-and-upload-hubspot', async (req, res) => {
+  try {
+    const { template, client, data, fileName } = req.body;
+
+    const token = process.env.HUBSPOT_TOKEN;
+    const folderId = process.env.HUBSPOT_FOLDER_ID || '333969056249';
+
+    if (!token) {
+      return res.status(500).json({ success: false, error: 'HUBSPOT_TOKEN env var not set' });
+    }
+
+    const pdfBuffer = await generatePDF(template, client, data);
+    const resolvedName = fileName || `document-${Date.now()}.pdf`;
+    const hubspotFile = await uploadToHubSpot(pdfBuffer, resolvedName, folderId, token);
+
+    res.json({
+      success: true,
+      fileId: hubspotFile.id,
+      fileUrl: hubspotFile.url,
+      fileName: hubspotFile.name,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 3. Generate PDF → store in memory → return public URL  (legacy alias)
 app.post('/generate-and-store', async (req, res) => {
   try {
     const { template, client, data } = req.body;
@@ -145,16 +192,14 @@ app.post('/generate-and-store', async (req, res) => {
     pdfStore.set(id, { buffer: pdfBuffer, createdAt: Date.now() });
 
     const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
-    const url = `${baseUrl}/pdf/${id}`;
-
-    res.json({ success: true, url });
+    res.json({ success: true, url: `${baseUrl}/pdf/${id}` });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// 3. Store existing base64 PDF → return public URL
+// 4. Store existing base64 PDF → return public URL
 app.post('/store-pdf', (req, res) => {
   try {
     const { pdf } = req.body;
@@ -162,21 +207,19 @@ app.post('/store-pdf', (req, res) => {
 
     const base64Data = pdf.replace(/^data:application\/pdf;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
-    const id = uuidv4();
 
+    const id = uuidv4();
     pdfStore.set(id, { buffer, createdAt: Date.now() });
 
     const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
-    const url = `${baseUrl}/pdf/${id}`;
-
-    res.json({ success: true, url });
+    res.json({ success: true, url: `${baseUrl}/pdf/${id}` });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// 4. Serve PDF by ID
+// 5. Serve stored PDF by ID
 app.get('/pdf/:id', (req, res) => {
   const entry = pdfStore.get(req.params.id);
   if (!entry) {
@@ -184,10 +227,11 @@ app.get('/pdf/:id', (req, res) => {
   }
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', 'inline; filename="document.pdf"');
+  res.setHeader('Content-Length', entry.buffer.length);
   res.send(entry.buffer);
 });
 
-// 5. List available clients
+// 6. List available clients
 app.get('/clients', (req, res) => {
   const logosDir = path.join(__dirname, 'logos');
   if (!fs.existsSync(logosDir)) return res.json({ clients: [] });
