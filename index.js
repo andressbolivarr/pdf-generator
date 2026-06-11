@@ -6,7 +6,6 @@ const sharp = require('sharp');
 const axios = require('axios');
 const FormData = require('form-data');
 const { v4: uuidv4 } = require('uuid');
-
 const isProduction = process.env.NODE_ENV === 'production';
 const puppeteer = isProduction ? require('puppeteer-core') : require('puppeteer');
 const chromium = isProduction ? require('@sparticuz/chromium') : null;
@@ -22,7 +21,6 @@ Handlebars.registerHelper('inc', function (index) {
 // ─── In-Memory PDF Store ──────────────────────────────────────────────────────
 const pdfStore = new Map();
 
-// Auto-clean PDFs older than 24 hours
 setInterval(() => {
   const cutoff = Date.now() - 24 * 60 * 60 * 1000;
   for (const [id, entry] of pdfStore.entries()) {
@@ -43,10 +41,22 @@ async function getLogo(clientSlug) {
     const filepath = path.join(logosDir, filename);
     if (fs.existsSync(filepath)) {
       const ext = filename.split('.').pop().toLowerCase();
+
       if (ext === 'svg') {
         const data = fs.readFileSync(filepath);
         return `data:image/svg+xml;base64,${Buffer.from(data).toString('base64')}`;
       }
+
+      if (ext === 'png') {
+        // Keep as PNG to preserve transparency — never convert to JPEG
+        const processed = await sharp(filepath)
+          .resize(280, 96, { fit: 'inside', withoutEnlargement: true })
+          .png()
+          .toBuffer();
+        return `data:image/png;base64,${processed.toString('base64')}`;
+      }
+
+      // JPEG/JPG — no transparency concern
       const compressed = await sharp(filepath)
         .resize(280, 96, { fit: 'inside', withoutEnlargement: true })
         .jpeg({ quality: 75, progressive: true })
@@ -54,6 +64,7 @@ async function getLogo(clientSlug) {
       return `data:image/jpeg;base64,${compressed.toString('base64')}`;
     }
   }
+
   return null;
 }
 
@@ -83,6 +94,7 @@ async function generatePDF(template, client, data) {
   );
 
   const page = await browser.newPage();
+
   await page.setRequestInterception(true);
   page.on('request', req => {
     const url = req.url();
@@ -94,13 +106,14 @@ async function generatePDF(template, client, data) {
   });
 
   await page.setContent(html, { waitUntil: 'networkidle0' });
+
   const pdfBuffer = await page.pdf({
     format: 'A4',
     printBackground: true,
     margin: { top: '16mm', bottom: '16mm', left: '14mm', right: '14mm' },
   });
-  await browser.close();
 
+  await browser.close();
   return Buffer.from(pdfBuffer);
 }
 
@@ -127,22 +140,18 @@ async function uploadToHubSpot(pdfBuffer, fileName, folderId, token) {
     },
   });
 
-  return response.data; // { id, name, url, ... }
+  return response.data;
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 // 1. Generate PDF → store in memory → return public URL
-//    Mapsly resultMessage:  {{ response.pdfUrl }}
-//    Next action uses:      GetFileContent(lastAction.resultMessage)
 app.post('/generate-pdf', async (req, res) => {
   try {
     const { template, client, data } = req.body;
     const pdfBuffer = await generatePDF(template, client, data);
-
     const id = uuidv4();
     pdfStore.set(id, { buffer: pdfBuffer, createdAt: Date.now() });
-
     const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
     res.json({ success: true, pdfUrl: `${baseUrl}/pdf/${id}` });
   } catch (error) {
@@ -152,13 +161,9 @@ app.post('/generate-pdf', async (req, res) => {
 });
 
 // 2. Generate PDF → upload directly to HubSpot → return file ID + URL
-//    Use when Railway should own the full upload (no Mapsly GetFileContent needed)
-//    Mapsly resultMessage:  {{ response.fileId }}
-//    Requires env vars:     HUBSPOT_TOKEN, HUBSPOT_FOLDER_ID
 app.post('/generate-and-upload-hubspot', async (req, res) => {
   try {
     const { template, client, data, fileName } = req.body;
-
     const token = process.env.HUBSPOT_TOKEN;
     const folderId = process.env.HUBSPOT_FOLDER_ID || '333969056249';
 
@@ -182,15 +187,13 @@ app.post('/generate-and-upload-hubspot', async (req, res) => {
   }
 });
 
-// 3. Generate PDF → store in memory → return public URL  (legacy alias)
+// 3. Generate PDF → store in memory → return public URL (legacy alias)
 app.post('/generate-and-store', async (req, res) => {
   try {
     const { template, client, data } = req.body;
     const pdfBuffer = await generatePDF(template, client, data);
-
     const id = uuidv4();
     pdfStore.set(id, { buffer: pdfBuffer, createdAt: Date.now() });
-
     const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
     res.json({ success: true, url: `${baseUrl}/pdf/${id}` });
   } catch (error) {
@@ -204,13 +207,10 @@ app.post('/store-pdf', (req, res) => {
   try {
     const { pdf } = req.body;
     if (!pdf) return res.status(400).json({ error: 'No PDF provided' });
-
     const base64Data = pdf.replace(/^data:application\/pdf;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
-
     const id = uuidv4();
     pdfStore.set(id, { buffer, createdAt: Date.now() });
-
     const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
     res.json({ success: true, url: `${baseUrl}/pdf/${id}` });
   } catch (error) {
@@ -235,13 +235,11 @@ app.get('/pdf/:id', (req, res) => {
 app.get('/clients', (req, res) => {
   const logosDir = path.join(__dirname, 'logos');
   if (!fs.existsSync(logosDir)) return res.json({ clients: [] });
-
   const files = fs.readdirSync(logosDir);
   const clients = files
     .filter(f => /\.(png|jpg|jpeg|svg)$/i.test(f))
     .map(f => f.replace(/\.[^.]+$/, ''))
     .filter(name => name !== 'default');
-
   res.json({ clients });
 });
 
