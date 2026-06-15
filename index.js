@@ -70,6 +70,13 @@ async function getLogo(clientSlug) {
 
 // ─── PDF Generator ────────────────────────────────────────────────────────────
 async function generatePDF(template, client, data) {
+  // Normalize line_items: convert plain strings to {name, serial} objects
+  if (data.line_items && Array.isArray(data.line_items)) {
+    data.line_items = data.line_items.map(item =>
+      typeof item === 'string' ? { name: item, serial: null } : item
+    );
+  }
+
   const templatePath = path.join(__dirname, 'templates', `${template}.hbs`);
   if (!fs.existsSync(templatePath)) {
     throw new Error(`Template "${template}" not found`);
