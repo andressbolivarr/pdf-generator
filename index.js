@@ -48,7 +48,6 @@ async function getLogo(clientSlug) {
       }
 
       if (ext === 'png') {
-        // Keep as PNG to preserve transparency — never convert to JPEG
         const processed = await sharp(filepath)
           .resize(280, 96, { fit: 'inside', withoutEnlargement: true })
           .png()
@@ -56,7 +55,6 @@ async function getLogo(clientSlug) {
         return `data:image/png;base64,${processed.toString('base64')}`;
       }
 
-      // JPEG/JPG — no transparency concern
       const compressed = await sharp(filepath)
         .resize(280, 96, { fit: 'inside', withoutEnlargement: true })
         .jpeg({ quality: 75, progressive: true })
@@ -68,6 +66,20 @@ async function getLogo(clientSlug) {
   return null;
 }
 
+// ─── Signature Fetcher ────────────────────────────────────────────────────────
+async function fetchSignature(url) {
+  if (!url || typeof url !== 'string' || !url.startsWith('http')) return null;
+  try {
+    const response = await axios.get(url, { responseType: 'arraybuffer' });
+    const contentType = response.headers['content-type'] || 'image/png';
+    const base64 = Buffer.from(response.data).toString('base64');
+    return `data:${contentType};base64,${base64}`;
+  } catch (error) {
+    console.error('Failed to fetch signature:', error.message);
+    return null;
+  }
+}
+
 // ─── PDF Generator ────────────────────────────────────────────────────────────
 async function generatePDF(template, client, data) {
   // Normalize line_items: convert plain strings to {name, serial} objects
@@ -75,6 +87,11 @@ async function generatePDF(template, client, data) {
     data.line_items = data.line_items.map(item =>
       typeof item === 'string' ? { name: item, serial: null } : item
     );
+  }
+
+  // Fetch signature from URL and convert to base64 data URI
+  if (data.signature && data.signature.startsWith('http')) {
+    data.signature = await fetchSignature(data.signature);
   }
 
   const templatePath = path.join(__dirname, 'templates', `${template}.hbs`);
