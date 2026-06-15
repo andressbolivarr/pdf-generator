@@ -66,18 +66,28 @@ async function getLogo(clientSlug) {
   return null;
 }
 
-// ─── Signature Fetcher ────────────────────────────────────────────────────────
-async function fetchSignature(url) {
-  if (!url || typeof url !== 'string' || !url.startsWith('http')) return null;
-  try {
-    const response = await axios.get(url, { responseType: 'arraybuffer' });
-    const contentType = response.headers['content-type'] || 'image/png';
-    const base64 = Buffer.from(response.data).toString('base64');
-    return `data:${contentType};base64,${base64}`;
-  } catch (error) {
-    console.error('Failed to fetch signature:', error.message);
-    return null;
+// ─── Signature Resolver ───────────────────────────────────────────────────────
+async function resolveSignature(value) {
+  if (!value) return null;
+
+  // Already a data URI — pass through
+  if (value.startsWith('data:')) return value;
+
+  // URL — fetch and convert to base64
+  if (value.startsWith('http')) {
+    try {
+      const response = await axios.get(value, { responseType: 'arraybuffer' });
+      const contentType = response.headers['content-type'] || 'image/png';
+      const base64 = Buffer.from(response.data).toString('base64');
+      return `data:${contentType};base64,${base64}`;
+    } catch (error) {
+      console.error('Failed to fetch signature URL:', error.message);
+      return null;
+    }
   }
+
+  // Raw base64 from Mapsly GetFileContent() — wrap in data URI
+  return `data:image/png;base64,${value}`;
 }
 
 // ─── PDF Generator ────────────────────────────────────────────────────────────
@@ -89,9 +99,9 @@ async function generatePDF(template, client, data) {
     );
   }
 
-  // Fetch signature from URL and convert to base64 data URI
-  if (data.signature && data.signature.startsWith('http')) {
-    data.signature = await fetchSignature(data.signature);
+  // Resolve signature to a renderable data URI
+  if (data.signature) {
+    data.signature = await resolveSignature(data.signature);
   }
 
   const templatePath = path.join(__dirname, 'templates', `${template}.hbs`);
